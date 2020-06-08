@@ -1,6 +1,7 @@
 import os
 import time
 import numpy as np
+from datetime import datetime
 
 _globals = {
     'runs_dir': None,
@@ -156,18 +157,47 @@ def write_run_metadata(type_, data):
 
 
 
-def do_training_run(file_, run_dir, artifacts_dir, echo, encoding, backup_dir='~/backups'):
-    # TODO:
-    # filter out files within the run_dir we don't want
+def do_training_run(file_, 
+                    run_dir, 
+                    artifacts_dir, 
+                    echo, 
+                    encoding, 
+                    exclude='', 
+                    backup_dir='~/backups'):
 
     # Copy src contents over to run_dir
     src_dir = os.getcwd() + '/'
 
+
+    start = datetime.now()
+    START_TIME = str(start).replace(' ', '_')[:-7]
+
+    print("rsyncing src directory over to run_dir")
     backup_dir = os.path.expanduser(backup_dir)
-    cmd = "rsync -abvv --backup-dir {} --info=backup2,progress2 {} {}".format(backup_dir, src_dir, run_dir)
+    cmd = "rsync -abvv --backup-dir {} --exclude {} --info=backup2,progress2 {} {}".format(
+        backup_dir, exclude, src_dir, run_dir)
     os.system(cmd)
 
+    print("Using run directory:", run_dir)
+
     # TODO: Do training run (source train.py)
+    # exec(open(file_).read())
+    try:
+        with open(file_) as fd:
+            exec(fd.read())
+    except Exception as e:
+        print(e)
+
+    # Write results, plots, etc to files
+
+    # Record end time
+    end = datetime.now()
+    END_TIME = str(end).replace(' ', '_')[:-7]
+
+    _globals['start_time_obj'] = start
+    _globals['end_time_obj'] = end
+
+    clear_run()
 
 
 
@@ -217,7 +247,7 @@ def training_run(file_='train.py',
                  echo=True,
                  encoding='utf-8'):
 
-    files = os.listdir('./')
+    files = os.listdir('.')
     if not file_ in files:
         raise ValueError("train.py not found in cwd")
 
@@ -233,47 +263,219 @@ def training_run(file_='train.py',
                              file_=file_)
 
     do_training_run(file_, run_dir, artifacts_dir, echo = echo, encoding = encoding)
+    
+    print("Training run completed:", run_dir)
 
+
+    """{R}
+    # prepare to return the run
+    run_return = return_runs(run_record(run_dir))
+
+    save_run_view(run_dir, file.path(run_dir, "tfruns.d", "view.html"))
+
+    return run_return
+    """
 
 # Remaining R CODE to convert
 """
-  # check for forced view
-  force_view <- isTRUE(view)
 
-  # result "auto" if necessary
-  if (identical(view, "auto"))
-    view <- interactive()
+run_record <- function(run_dir) {
 
-  # print completed message
-  message('\nRun completed: ', run_dir, '\n')
+  # validate that it exists
+  if (!utils::file_test("-d", run_dir))
+    stop("Run directory ", run_dir, " does not exist", call. = FALSE)
 
-  # prepare to return the run
-  run_return <- return_runs(run_record(run_dir))
+  # compute run name and meta dir
+  run <- basename(run_dir)
+  meta_dir <- file.path(run_dir, "tfruns.d")
+  props_dir <- file.path(meta_dir, "properties")
+  if (!utils::file_test("-d", props_dir))
+    props_dir <- NULL
 
-  # force_view means we do the view (i.e. we don't rely on printing)
-  if (force_view) {
+  # read all properties into a list
+  read_properties <- function() {
+    if (!is.null(props_dir) && file.exists(props_dir)) {
+      properties <- list.files(props_dir)
+      values <- lapply(properties, function(file) {
+        paste(readLines(file.path(props_dir, file)), collapse = "\n")
+      })
+      names(values) <- properties
 
-    view_run(run_dir)
-    invisible(run_return)
+      # default 'type' and 'context' (data migration)
+      if (is.null(values$type) || identical(values$type, 'local'))
+        values$type <- 'training'
+      if (is.null(values$context))
+        values$context <- 'local'
 
-  # regular view means give it a class that will result in a view
-  # when executed as a top-level statement
-  } else if (isTRUE(view)) {
-
-    class(run_return) <- c("tfruns_viewed_run", class(run_return))
-    run_return
-
-  # save a copy of the run view
-  } else if (identical(view, "save")) {
-
-    save_run_view(run_dir, file.path(run_dir, "tfruns.d", "view.html"))
-    invisible(run_return)
-
-  # otherwise just return invisibly
-  } else {
-
-    invisible(run_return)
-
+      # return values
+      values
+    } else {
+      list()
+    }
   }
+
+  # type converters for properties
+  as_type <- function(properties, name, converter) {
+    value <- properties[[name]]
+    if (is.null(value))
+      NULL
+    else
+      converter(value)
+  }
+  as_numeric <- function(properties, name) {
+    as_type(properties, name, as.numeric)
+  }
+  as_integer <- function(properties, name) {
+    as_type(properties, name, as.integer)
+  }
+  as_logical <- function(properties, name) {
+    as_type(properties, name, function(value) {
+      if (value %in% c("TRUE", "true", "yes", "1"))
+        value <- TRUE
+      else if (value %in% c("FALSE", "false", "no", "0"))
+        value <- FALSE
+      as.logical(value)
+    })
+  }
+
+  # function to read columns from a json file
+  read_json_columns <- function(file, prefix) {
+    json_path <- file.path(meta_dir, file)
+    if (file.exists(json_path)) {
+      columns <- jsonlite::read_json(json_path)
+      if (length(columns) > 0) {
+        names(columns) <- paste0(prefix, "_", names(columns))
+      }
+      columns
+    } else {
+      NULL
+    }
+  }
+
+  # core columns
+  columns <- list()
+  columns$run_dir <- run_dir
+
+  # read properties and do type conversions for known values
+  properties <- read_properties()
+  properties$start <- as_numeric(properties, "start")
+  properties$end <- as_numeric(properties, "end")
+  properties$samples <- as_integer(properties, "samples")
+  properties$validation_samples <- as_integer(properties, "validation_samples")
+  for (unit in valid_steps_units)
+    properties[[unit]] <- as_integer(properties, unit)
+  properties$batch_size <- as_integer(properties, "batch_size")
+  properties$completed <- as_logical(properties, "completed")
+  properties$learning_rate <- as_numeric(properties, "learning_rate")
+  properties$cloudml_created <- as_integer(properties, "cloudml_created")
+  properties$cloudml_start <- as_integer(properties, "cloudml_start")
+  properties$cloudml_end <- as_integer(properties, "cloudml_end")
+  properties$cloudml_ml_units <- as_numeric(properties, "cloudml_ml_units")
+
+  # add properties to columns
+  columns <- append(columns, properties)
+
+  # evaluation
+  columns <- append(columns, read_json_columns("evaluation.json", "eval"))
+
+  # metrics
+  epochs_completed <- 0L
+  metrics_json_path <- file.path(meta_dir, "metrics.json")
+  if (file.exists(metrics_json_path)) {
+    # read metrics
+    metrics <- jsonlite::read_json(metrics_json_path, simplifyVector = TRUE)
+    if (length(metrics) > 0) {
+      for (metric in names(metrics)) {
+        if (metric == "epoch")
+          next
+        values <- metrics[[metric]]
+        available_values <- values[!is.na(values)]
+        epochs_completed <- length(available_values)
+        if (epochs_completed > 0) {
+          last_value <- available_values[[epochs_completed]]
+          columns[[paste0("metric_", metric)]] <- last_value
+        }
+      }
+    }
+  }
+
+  steps_completed_unit <- get_steps_completed_unit(get_steps_unit(columns))
+  # epochs completed
+  columns[[steps_completed_unit]] <- epochs_completed
+
+  # flags
+  columns <- append(columns, read_json_columns("flags.json", "flag"))
+
+  # error
+  error_json_path <- file.path(meta_dir, "error.json")
+  if (file.exists(error_json_path)) {
+    error <- jsonlite::read_json(error_json_path, simplifyVector = TRUE)
+    columns[["error_message"]] <- error$message
+    columns[["error_traceback"]] <- paste(error$traceback, collapse = "\n")
+  }
+
+
+  # add metrics and source fields
+  meta_dir <- meta_dir(run_dir, create = FALSE)
+  metrics_json <- file.path(meta_dir, "metrics.json")
+  if (file.exists(metrics_json))
+    columns$metrics <- metrics_json
+  source_code <- file.path(meta_dir, "source.tar.gz")
+  if (file.exists(source_code))
+    columns$source_code <- source_code
+
+  # convert to data frame for calls to rbind
+  as.data.frame(columns, stringsAsFactors = FALSE)
 }
+
+
+
+
+
+return_runs <- function(runs, order = NULL) {
+
+  # re-order columns
+  select_cols <- function(cols) {
+    intersect(cols, colnames(runs))
+  }
+  cols_with_prefix <- function(prefix) {
+    cols <- colnames(runs)
+    cols[grepl(paste0("^", prefix, "_"), cols)]
+  }
+  cols <- character()
+  cols <- c(cols, cols_with_prefix("eval"))
+  cols <- c(cols, cols_with_prefix("metric"))
+  cols <- c(cols, cols_with_prefix("flag"))
+  cols <- c(cols, select_cols(c("samples", "validation_samples")))
+  cols <- c(cols, select_cols(c("batch_size")))
+  for (unit in valid_steps_units)
+    cols <- c(cols, select_cols(c(unit, paste0(unit, "_completed"))))
+  cols <- c(cols, select_cols(c("metrics")))
+  cols <- c(cols, select_cols(c("model", "loss_function", "optimizer", "learning_rate")))
+  cols <- c(cols, select_cols(c("script", "source")))
+  cols <- c(cols, select_cols(c("start", "end", "completed")))
+  cols <- c(cols, select_cols(c("output", "error_message", "error_traceback")))
+  cols <- c(cols, select_cols(c("source_code")))
+  cols <- c(cols, select_cols(c("context", "type")))
+  cols <- c(cols, setdiff(colnames(runs), cols))
+
+  # promote any ordered columns to the front
+  if (identical(unname(order), "start"))
+    order <- NULL
+  initial_cols <- c(select_cols(c("run_dir")), order)
+  cols <- setdiff(cols, initial_cols)
+  cols <- c(initial_cols, cols)
+
+  # re-order cols (always have type and run_dir at the beginning)
+  runs <- runs[, cols]
+
+  # apply special class and add order attribute
+  class(runs) <- c("tfruns_runs_df", class(runs))
+  attr(runs, "order") <- order
+  attr(runs, "original_cols") <- colnames(runs)
+
+  # return runs
+  runs
+}
+
 """
