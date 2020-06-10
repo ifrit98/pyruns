@@ -26,6 +26,7 @@ _globals = {
 
 
 def clear_run():
+    """Clears `_globals` dictionary by setting all to `None`"""
     _globals['runs_dir'] = None
     _globals['run_dir']['path'] = None
     _globals['run_dir']['config'] = None
@@ -34,14 +35,14 @@ def clear_run():
     _globals['pending_writes'] = None
 
 
-
 def unique_run_dir(runs_dir = None, format_="%m_%d_%y_%H-%M-%S"):
+    """Returns a unique run directory filepath to house an experiment"""
     runs_dir = runs_dir or _globals['runs_dir']
     run_dir = time.strftime(format_, time.strptime(time.asctime()))
     return os.path.join(runs_dir, run_dir)
 
 
-
+# TODO: Add tar functionality to `do_training_run()`
 def tar(tarpath, files, compression='gzip'):
     import tarfile
     tar = tarfile.open(tarpath, "w")
@@ -50,20 +51,16 @@ def tar(tarpath, files, compression='gzip'):
     tar.close()
 
 
-
 def is_run_active():
     return _globals['run_dir']['path'] is None
-
 
 
 def run_dir():
     return _globals['run_dir']['path'] if is_run_active() else os.getcwd()
 
 
-
 def do_training_run(file_,
                     run_dir,
-                    echo=False,
                     exclude='.git*', # must be a str of csv (comma-separated-values)
                     meta_file = 'metadata.json',
                     logfile='stdout.log',
@@ -183,9 +180,17 @@ def training_run(file_='train.py',
                  flags_file='flags.yaml',
                  run_dir=None,
                  runs_dir=None,
-                 artifacts_dir=None,
-                 echo=True,
+                 exclude='',
                  encoding='utf-8'):
+    """Initialize and perform a training run given `file_` training script.
+
+    Keyword arguments:
+    file_ -- training python script
+    flags -- flags object or dictionary if already loaded
+    run_dir -- the unique run directory to place experiment metadata
+    runs_dir -- high level runs directory that houses all runs
+    exclude -- comma separated list of files or directories to exlucde from rsync
+    """
 
     files = os.listdir('.')
     if file_ not in files:
