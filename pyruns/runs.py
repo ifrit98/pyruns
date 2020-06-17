@@ -6,7 +6,7 @@ from pprint import pformat
 from contextlib import redirect_stdout
 
 
-logger = logging.getLogger('myapp')
+logger = logging.getLogger('pyruns')
 
 
 friendly_timestamp = lambda: time.strftime("%m_%d_%y_%H-%M-%S", time.strptime(time.asctime()))
@@ -135,10 +135,8 @@ def initialize_run(run_dir=None,
                    flags_file='flags.yaml',
                    file_=None):
 
-    clear_run()
-
     if _globals['runs_dir'] is None:
-      _globals['runs_dir'] = os.path.expanduser('~/runs')
+        _globals['runs_dir'] = os.path.expanduser('~/runs')
 
     if run_dir is None:
         run_dir = unique_run_dir()
@@ -191,6 +189,7 @@ def training_run(file_='train.py',
     runs_dir -- high level runs directory that houses all runs
     exclude -- comma separated list of files or directories to exlucde from rsync
     """
+    clear_run()
 
     files = os.listdir('.')
     if file_ not in files:
