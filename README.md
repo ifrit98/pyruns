@@ -25,22 +25,26 @@ training_run()
 Initialize and perform a training run given `file_` training script, usually named `train.py`.  `run_dir` is created automatically unless otherwise specified.  The top-level `runs_dir` is assumed to be a user-expandable string path of the form `'~/runs'` if none is specified.
 
 Keyword Arguments:
+```
 file_ -- training python script
 flags -- flags object or dictionary if already loaded
 run_dir -- the unique run directory to place experiment metadata
 runs_dir -- high level runs directory that houses all runs
 exclude -- comma separated string of files or directories to exlucde from rsync
+```
 
 `initialize_run(run_dir=None, flags=None, flags_file='flags.yaml', file_=None)`
 
 Initialize variables and class objects for a new run.  This calls `unique_run_dir()` internally, loads the FLAGS yaml object from `flags_file` as a python dictionary, stored in `_globals['flags']`.
 
 Keyword Arguments:
+```
 run_dir -- the unique run directory to place experiment metadata.
 flags -- flags object or dictionary if already loaded.
 flags_file -- filepath to yaml flags file.
 runs_dir -- high level runs directory that houses all runs.
 file_ -- training python script string name
+```
 
 `do_training_run(file_, run_dir, exclude='.git*', meta_file = 'metadata.json', logfile='stdout.log', backup_dir='~/backups')`
 
